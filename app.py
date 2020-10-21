@@ -4,8 +4,19 @@ from typing import Optional, Awaitable
 import tornado.ioloop
 import tornado.web
 from tornado.web import url
-from handler import *
+import handler
+import json
+import urllib.parse
 import traceback
+
+
+class ErrorResponse:
+    code = None
+    message = None
+
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -16,19 +27,32 @@ class BaseHandler(tornado.web.RequestHandler):
     json_args = None
 
     STATUS_CODE_OK = 200
+    STATUS_CODE_ROUTE_MISSING = 404
     STATUS_CODE_SYS = 500
 
-    ERROR_CODE_OK = 0
-    ERROR_CODE_SYS = 500
+    ERROR_OK = ErrorResponse(0, "ok")
+    ERROR_ROUTE_MISSING = ErrorResponse(400, "route missing for requested url, maybe mistyping or removed ")
+    ERROR_SYS = ErrorResponse(500, "unknown server error")
 
-    def initialize(self, db):
-        print("initialize")
+    def initialize(self, db=None):
         self.db = db
 
-    def prepare(self):
-        print("prepare")
+    async def prepare(self):
         if self.is_json_request():
             self.json_args = json.loads(self.request.body)
+        await self.dispatch()
+        self.finish()
+
+    async def dispatch(self):
+        # url parse and route to class method
+        parse_result = urllib.parse.urlparse(self.request.uri)
+        path_parts = parse_result.path.split("/")
+        path_class = path_parts[1]
+        path_method = path_parts[2]
+        if not hasattr(self, path_method):
+            raise tornado.web.HTTPError(self.STATUS_CODE_ROUTE_MISSING, "method not found in class: %s" % (path_class,))
+        method = getattr(self, path_method)
+        await method()
 
     def is_json_request(self):
         if self.request.headers.get("Content-Type", "").startswith("application/json"):
@@ -37,7 +61,7 @@ class BaseHandler(tornado.web.RequestHandler):
             return False
 
     def on_finish(self):
-        print("on_finished")
+        pass
 
     def on_connection_close(self):
         print("on_connection_close")
@@ -45,14 +69,20 @@ class BaseHandler(tornado.web.RequestHandler):
     def write_error(self, status_code, **kwargs):
         exc_type, exc_val, tb = kwargs["exc_info"]
         traceback_info = traceback.format_exception(exc_type, exc_val, tb)
+        error_response = self.ERROR_SYS
+        status_code = self.STATUS_CODE_SYS
+        if exc_type is tornado.web.HTTPError:
+            error_response = self.ERROR_ROUTE_MISSING
+            status_code = self.STATUS_CODE_ROUTE_MISSING
         if self.is_json_request():
-            debug_info = {"traceback": traceback_info}
-            self.write_json(code=self.ERROR_CODE_SYS, message=str(exc_val), debug=debug_info,
-                            status_code=self.STATUS_CODE_SYS)
+            debug_info = {"except": str(exc_val), "traceback": traceback_info}
+            self.write_json(code=error_response.code, message=error_response.message, debug=debug_info,
+                            status_code=status_code)
         else:
-            self.write_html("%s\n%s" % (exc_val, "".join(traceback_info)), self.STATUS_CODE_SYS)
+            self.write_html("%s\n%s\n%s" % (error_response.message, exc_val, "".join(traceback_info)), status_code)
 
-    def write_json(self, data=None, code=ERROR_CODE_OK, message="success", debug=None, status_code=STATUS_CODE_OK):
+    def write_json(self, data=None, code=ERROR_OK.code, message=ERROR_OK.message, debug=None,
+                   status_code=STATUS_CODE_OK):
         self.set_status(status_code)
         result = {"code": code, "message": message, "data": data, "debug": debug}
         self.write(result)
@@ -62,7 +92,17 @@ class BaseHandler(tornado.web.RequestHandler):
         self.write(html)
 
     def set_default_headers(self):
-        print("set_default_headers")
+        pass
+
+
+class DefaultHandler(BaseHandler):
+    async def prepare(self):
+        if self.is_json_request():
+            self.write_json(code=self.ERROR_ROUTE_MISSING.code, message=self.ERROR_ROUTE_MISSING.message,
+                            status_code=self.STATUS_CODE_ROUTE_MISSING)
+        else:
+            self.write_html(html=self.ERROR_ROUTE_MISSING.message, status_code=self.STATUS_CODE_ROUTE_MISSING)
+        self.finish()
 
 
 def make_app():
@@ -70,10 +110,10 @@ def make_app():
 
     return tornado.web.Application(
         [
-            url(r"/", MainHandler),
-            url(r"/story/([0-9]+)", StoryHandler, dict(db=db), name="story")
+            url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(db=db), name="story")
         ]
         , debug=True
+        , default_handler_class=DefaultHandler
     )
 
 
