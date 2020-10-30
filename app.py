@@ -8,6 +8,11 @@ import handler
 import json
 import urllib.parse
 import traceback
+import pathlib
+import os
+
+app_path = pathlib.Path(__file__).parent.absolute()
+static_path = os.path.join(app_path, "static")
 
 
 class ErrorResponse:
@@ -110,6 +115,7 @@ def make_app():
 
     return tornado.web.Application(
         [
+            url(r"/static/(.*)", tornado.web.StaticFileHandler, dict(path=static_path)),
             url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(db=db), name="story")
         ]
         , debug=True
