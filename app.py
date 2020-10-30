@@ -1,8 +1,9 @@
 from abc import ABC
 from typing import Optional, Awaitable
-
+import tornado.options
 import tornado.ioloop
 import tornado.web
+import tornado.locks
 from tornado.web import url
 import handler
 import json
@@ -10,6 +11,8 @@ import urllib.parse
 import traceback
 import pathlib
 import os
+import aiomysql.sa
+import asyncio
 
 app_path = pathlib.Path(__file__).parent.absolute()
 static_path = os.path.join(app_path, "static")
@@ -110,20 +113,30 @@ class DefaultHandler(BaseHandler):
         self.finish()
 
 
-def make_app():
-    db = {"name": "db1"}
-
+def make_app(db):
     return tornado.web.Application(
         [
             url(r"/static/(.*)", tornado.web.StaticFileHandler, dict(path=static_path)),
-            url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(db=db), name="story")
+            url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(db=db), name="story"),
+            url(r"/db/([%0-9a-zA-Z]+)", handler.DbHandler, dict(db=db), name="db")
         ]
         , debug=True
         , default_handler_class=DefaultHandler
     )
 
 
+async def main():
+    loop = tornado.ioloop.IOLoop.current()
+    tornado.options.parse_command_line()
+    async with aiomysql.sa.create_engine(
+            user="zhaizhengqing", db="zhaizhengqing", port=3306, host="192.168.56.1", password="123654",
+            loop=loop.asyncio_loop
+    ) as db:
+        app = make_app(db)
+        app.listen(8888)
+        shutdown_event = tornado.locks.Event()
+        await shutdown_event.wait()
+
+
 if __name__ == "__main__":
-    app = make_app()
-    app.listen(8888)
-    tornado.ioloop.IOLoop.current().start()
+    tornado.ioloop.IOLoop.current().run_sync(main)
