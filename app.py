@@ -12,6 +12,7 @@ import traceback
 import pathlib
 import os
 import aiomysql.sa
+import aiopg.sa
 import asyncio
 
 app_path = pathlib.Path(__file__).parent.absolute()
@@ -31,7 +32,8 @@ class BaseHandler(tornado.web.RequestHandler):
     def data_received(self, chunk: bytes) -> Optional[Awaitable[None]]:
         raise
 
-    db = None
+    mysql = None
+    postgres = None
     json_args = None
 
     STATUS_CODE_OK = 200
@@ -42,8 +44,9 @@ class BaseHandler(tornado.web.RequestHandler):
     ERROR_ROUTE_MISSING = ErrorResponse(400, "route missing for requested url, maybe mistyping or removed ")
     ERROR_SYS = ErrorResponse(500, "unknown server error")
 
-    def initialize(self, db=None):
-        self.db = db
+    def initialize(self, mysql=None, postgres=None):
+        self.mysql = mysql
+        self.postgres = postgres
 
     async def prepare(self):
         if self.is_json_request():
@@ -113,12 +116,12 @@ class DefaultHandler(BaseHandler):
         self.finish()
 
 
-def make_app(db):
+def make_app(mysql, postgres):
     return tornado.web.Application(
         [
             url(r"/static/(.*)", tornado.web.StaticFileHandler, dict(path=static_path)),
-            url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(db=db), name="story"),
-            url(r"/db/([%0-9a-zA-Z]+)", handler.DbHandler, dict(db=db), name="db")
+            url(r"/story/([%0-9a-zA-Z]+)", handler.StoryHandler, dict(mysql=mysql, postgres=postgres), name="story"),
+            url(r"/db/([%0-9a-zA-Z]+)", handler.DbHandler, dict(mysql=mysql, postgres=postgres), name="db")
         ]
         , debug=True
         , default_handler_class=DefaultHandler
@@ -131,11 +134,13 @@ async def main():
     async with aiomysql.sa.create_engine(
             user="zhaizhengqing", db="zhaizhengqing", port=3306, host="192.168.56.1", password="123654",
             loop=loop.asyncio_loop
-    ) as db:
-        app = make_app(db)
-        app.listen(8888)
-        shutdown_event = tornado.locks.Event()
-        await shutdown_event.wait()
+    ) as mysql:
+        async with aiopg.sa.create_engine(user='zhaizhengqing', database='zhaizhengqing', host='192.168.56.1',
+                                          password='123654') as postgres:
+            app = make_app(mysql=mysql, postgres=postgres)
+            app.listen(8888)
+            shutdown_event = tornado.locks.Event()
+            await shutdown_event.wait()
 
 
 if __name__ == "__main__":

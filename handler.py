@@ -1,6 +1,8 @@
 import datetime
 from app import BaseHandler
 from chatdemo import database
+import aiomysql.cursors
+import aiopg.cursor
 
 
 class StoryHandler(BaseHandler):
@@ -18,8 +20,18 @@ class StoryHandler(BaseHandler):
 
 class DbHandler(BaseHandler):
     async def query(self):
-        async with self.db.acquire() as conn:
+        async with self.mysql.acquire() as conn:
             sql = self.json_args["sql"]
-            cur = await conn.connection.cursor()
+            cur = await conn.connection.cursor(aiomysql.cursors.DictCursor)
             await cur.execute(sql)
             self.write_json(data=await cur.fetchall())
+
+    async def
+        async with self.postgres.acquire() as conn:
+            sql = self.json_args["sql"]
+            async with conn.connection.cursor(aiopg.cursor.Cursor) as cur:
+                await cur.execute(sql)
+                self.write_json(data=await cur.fetchall())
+
+    async def query3(self):
+        self.write_json(data={"a":1}, status_code=401)
