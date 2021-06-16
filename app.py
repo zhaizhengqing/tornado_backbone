@@ -133,10 +133,11 @@ async def main():
     tornado.options.parse_command_line()
     async with aiomysql.sa.create_engine(
             user="zhaizhengqing", db="zhaizhengqing", port=3306, host="192.168.56.1", password="123654",
-            loop=loop.asyncio_loop
+            connect_timeout=3000, loop=loop.asyncio_loop
     ) as mysql:
-        async with aiopg.sa.create_engine(user='zhaizhengqing', database='zhaizhengqing', host='192.168.56.1',
-                                          password='123654') as postgres:
+        async with aiopg.sa.create_engine(
+                user='zhaizhengqing', database='zhaizhengqing', host='192.168.56.1',
+                password='123654', connect_timeout=3000) as postgres:
             app = make_app(mysql=mysql, postgres=postgres)
             app.listen(8888)
             shutdown_event = tornado.locks.Event()

@@ -26,7 +26,7 @@ class DbHandler(BaseHandler):
             await cur.execute(sql)
             self.write_json(data=await cur.fetchall())
 
-    async def
+    async def query2(self):
         async with self.postgres.acquire() as conn:
             sql = self.json_args["sql"]
             async with conn.connection.cursor(aiopg.cursor.Cursor) as cur:
